@@ -1,0 +1,6 @@
+services:
+  vedismm.gateway:
+    class: Drupal\vedismm\Service\VediSMMGateway
+  vedismm.submission:
+    class: Drupal\vedismm\Service\SubmissionService
+    arguments: ['@vedismm.gateway']

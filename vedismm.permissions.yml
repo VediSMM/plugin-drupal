@@ -1,0 +1,6 @@
+send content to vedismm:
+  title: 'Send content to VediSMM'
+  description: 'Create VediSMM drafts, schedules, or publish jobs from Drupal content.'
+administer vedismm:
+  title: 'Administer VediSMM'
+  description: 'Configure the server-side VediSMM API token.'

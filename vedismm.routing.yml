@@ -1,0 +1,14 @@
+vedismm.settings:
+  path: '/admin/config/services/vedismm'
+  defaults:
+    _form: '\Drupal\vedismm\Form\SettingsForm'
+    _title: 'VediSMM'
+  requirements:
+    _permission: 'administer vedismm'
+vedismm.submit:
+  path: '/vedismm/submit/{entity_type}/{entity_id}'
+  defaults:
+    _form: '\Drupal\vedismm\Form\SubmissionForm'
+    _title: 'Send to VediSMM'
+  requirements:
+    _permission: 'send content to vedismm'

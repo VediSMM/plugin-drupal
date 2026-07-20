@@ -1,0 +1,6 @@
+name: VediSMM
+type: module
+description: Sends Drupal content to VediSMM as explicit drafts, scheduled posts, or publish jobs.
+package: VediSMM
+core_version_requirement: ^11
+version: 0.1.0-dev
