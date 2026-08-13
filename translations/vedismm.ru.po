@@ -7,6 +7,15 @@ msgstr ""
 msgid "Send content to VediSMM"
 msgstr "Отправлять контент в VediSMM"
 
+msgid "Send to VediSMM"
+msgstr "Отправить в VediSMM"
+
+msgid "Content sent to VediSMM."
+msgstr "Материал отправлен в VediSMM."
+
+msgid "The selected content could not be loaded."
+msgstr "Не удалось загрузить выбранный материал."
+
 msgid "VediSMM API token"
 msgstr "API-токен VediSMM"
 

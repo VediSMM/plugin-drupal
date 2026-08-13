@@ -2,6 +2,65 @@
 
 declare(strict_types=1);
 
+if (!interface_exists('Symfony\\Component\\DependencyInjection\\ContainerInterface')) {
+    eval(<<<'PHP'
+namespace Symfony\Component\DependencyInjection;
+interface ContainerInterface
+{
+    public function get(string $id): mixed;
+}
+PHP);
+}
+
+if (!interface_exists('Drupal\\Core\\Form\\FormStateInterface')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\Form;
+interface FormStateInterface
+{
+    public function getValue(string $key, mixed $default = null): mixed;
+    public function set(string $key, mixed $value): static;
+    public function get(string $key): mixed;
+}
+PHP);
+}
+
+if (!interface_exists('Drupal\\Core\\Form\\FormInterface')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\Form;
+interface FormInterface
+{
+    public function getFormId();
+    public function buildForm(array $form, FormStateInterface $form_state);
+    public function validateForm(array &$form, FormStateInterface $form_state);
+    public function submitForm(array &$form, FormStateInterface $form_state);
+}
+PHP);
+}
+
+if (!class_exists('Drupal\\Core\\Form\\FormBase')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\Form;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+abstract class FormBase implements FormInterface
+{
+    public static function create(ContainerInterface $container) { return new static(); }
+    public function validateForm(array &$form, FormStateInterface $form_state) {}
+    protected function t($string, array $args = [], array $options = []) { return $string; }
+    protected function messenger() { return $GLOBALS['drupal_test_messenger']; }
+}
+PHP);
+}
+
+if (!interface_exists('Drupal\\Core\\Entity\\EntityTypeManagerInterface')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\Entity;
+interface EntityTypeManagerInterface
+{
+    public function getStorage($entity_type_id);
+}
+PHP);
+}
+
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Drupal\\vedismm\\';
     if (!str_starts_with($class, $prefix)) {
@@ -179,6 +238,116 @@ drupal_check('Drupal Form API exposes accessible dependent tracking checkboxes',
     && str_contains((string) ($trackingElements['add_source']['#description'] ?? ''), 'utm_source')
     && str_contains((string) ($trackingElements['add_source']['#description'] ?? ''), 'utm_term'),
     $trackingElements);
+
+$formState = new class implements \Drupal\Core\Form\FormStateInterface {
+    /** @var array<string,mixed> */
+    public array $values = [];
+    /** @var array<string,mixed> */
+    public array $storage = [];
+
+    public function getValue(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function set(string $key, mixed $value): static
+    {
+        $this->storage[$key] = $value;
+        return $this;
+    }
+
+    public function get(string $key): mixed
+    {
+        return $this->storage[$key] ?? null;
+    }
+};
+$entity = new class {
+    public function id(): int { return 42; }
+    public function getRevisionId(): int { return 7; }
+    public function bundle(): string { return 'article'; }
+    public function label(): string { return 'Routed Drupal article'; }
+    public function hasField(string $name): bool { return $name === 'body'; }
+    public function get(string $name): object
+    {
+        return new class {
+            /** @return array<int,array{value:string}> */
+            public function getValue(): array { return [['value' => '<p>Routed body</p>']]; }
+        };
+    }
+    public function toUrl(string $rel, array $options): object
+    {
+        return new class {
+            public function toString(): string { return 'https://example.test/node/42'; }
+        };
+    }
+};
+$entityTypeManager = new class($entity) implements \Drupal\Core\Entity\EntityTypeManagerInterface {
+    public function __construct(private readonly object $entity) {}
+    public function getStorage($entity_type_id): object
+    {
+        $entity = $this->entity;
+        return new class($entity) {
+            public function __construct(private readonly object $entity) {}
+            public function load(mixed $id): ?object { return (string) $id === '42' ? $this->entity : null; }
+        };
+    }
+};
+$container = new class($service, $entityTypeManager) implements \Symfony\Component\DependencyInjection\ContainerInterface {
+    public function __construct(private readonly object $service, private readonly object $entityTypeManager) {}
+    public function get(string $id): mixed
+    {
+        return match ($id) {
+            'vedismm.submission' => $this->service,
+            'entity_type.manager' => $this->entityTypeManager,
+            default => throw new RuntimeException("Unknown test service: {$id}"),
+        };
+    }
+};
+$GLOBALS['drupal_test_messenger'] = new class {
+    /** @var array<int,string> */
+    public array $statuses = [];
+    public function addStatus(mixed $message): void { $this->statuses[] = (string) $message; }
+};
+
+drupal_check('submission route class is a native Form API form',
+    is_subclass_of($submissionForm, \Drupal\Core\Form\FormBase::class)
+    && is_subclass_of($submissionForm, \Drupal\Core\Form\FormInterface::class));
+$routedForm = method_exists($submissionForm, 'create') ? $submissionForm::create($container) : null;
+drupal_check('Drupal container can instantiate the routed submission form',
+    $routedForm instanceof \Drupal\Core\Form\FormInterface);
+$builtForm = $routedForm instanceof \Drupal\Core\Form\FormInterface
+    ? $routedForm->buildForm([], $formState, 'node', '42')
+    : [];
+drupal_check('routed form builds tracking controls and a native submit action',
+    ($builtForm['tracking']['#type'] ?? null) === 'fieldset'
+    && ($builtForm['actions']['submit']['#type'] ?? null) === 'submit'
+    && $formState->get('vedismm_entity_type') === 'node'
+    && $formState->get('vedismm_entity_id') === '42',
+    $builtForm);
+
+if ($routedForm instanceof \Drupal\Core\Form\FormInterface) {
+    $formState->values['tracking'] = ['shorten_links' => '1', 'add_source' => '1'];
+    $submissionArray = [];
+    $routedForm->submitForm($submissionArray, $formState);
+}
+$routedRequest = $calls[2] ?? [];
+drupal_check('native form submission loads the routed entity and reaches the gateway',
+    ($routedRequest['path'] ?? null) === '/posts'
+    && ($routedRequest['body']['title'] ?? null) === 'Routed Drupal article'
+    && ($routedRequest['body']['content'] ?? null) === 'Routed body'
+    && ($routedRequest['body']['link'] ?? null) === 'https://example.test/node/42'
+    && ($routedRequest['body']['options']['tracking'] ?? null) === [
+        'shorten_links' => true,
+        'add_source' => true,
+    ]
+    && !array_key_exists('shorten_links', $routedRequest['body'] ?? [])
+    && !array_key_exists('add_source', $routedRequest['body'] ?? []),
+    $routedRequest);
+drupal_check('native Form API submission reports success without a custom CSRF field',
+    ($formState->get('vedismm_result')['post_id'] ?? null) === 301
+    && $GLOBALS['drupal_test_messenger']->statuses === ['Content sent to VediSMM.']
+    && !array_key_exists('token', $builtForm)
+    && !array_key_exists('csrf_token', $builtForm));
 
 foreach ([['has_permission' => false, 'csrf_valid' => true, 'code' => 'vedismm_permission_denied'], ['has_permission' => true, 'csrf_valid' => false, 'code' => 'vedismm_invalid_csrf']] as $case) {
     try {

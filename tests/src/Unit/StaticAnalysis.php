@@ -32,12 +32,16 @@ $englishGuide = (string) file_get_contents($root . '/docs/en/guide.md');
 $russianGuide = (string) file_get_contents($root . '/docs/ru/guide.md');
 
 $contractChecks = [
+    'routed class extends Drupal FormBase' => str_contains($form, 'extends FormBase'),
+    'routed form has container factory' => str_contains($form, 'static function create(') && str_contains($form, "get('vedismm.submission')"),
+    'routed form builds and submits through Form API' => str_contains($form, 'function buildForm(') && str_contains($form, 'function submitForm('),
     'native Drupal checkbox controls' => substr_count($form, "'#type' => 'checkbox'") >= 2,
     'native Drupal dependency states' => str_contains($form, "'#states'") && str_contains($form, "tracking[shorten_links]"),
     'native Form API CSRF convention' => !str_contains($form, "'#token'") && !str_contains($form, 'csrf_token'),
     'nested tracking request shape' => str_contains($mapper, "'tracking'"),
     'strict Drupal checkbox normalization' => str_contains($mapper, "=== '1'"),
     'Russian tracking translation' => str_contains($translation, 'Сокращать ссылки') && str_contains($translation, 'Добавлять источник площадки'),
+    'Russian native submission status translation' => str_contains($translation, 'msgid "Send to VediSMM"') && str_contains($translation, 'msgid "Content sent to VediSMM."'),
     'English exact UTM docs' => str_contains($englishGuide, 'utm_source') && str_contains($englishGuide, 'utm_term'),
     'Russian exact UTM docs' => str_contains($russianGuide, 'utm_source') && str_contains($russianGuide, 'utm_term'),
     'no plugin URL rewriting' => !str_contains($mapper, 'go.vedismm.ru'),
