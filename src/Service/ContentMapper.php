@@ -6,9 +6,11 @@ namespace Drupal\vedismm\Service;
 
 final class ContentMapper
 {
-    /** @param array<string,mixed> $entity @param array<string,array<int,mixed>> $targets @return array<string,mixed> */
-    public static function fromEntity(array $entity, array $targets): array
+    /** @param array<string,mixed> $entity @param array<string,array<int,mixed>> $targets @param array<string,mixed> $tracking @return array<string,mixed> */
+    public static function fromEntity(array $entity, array $targets, array $tracking = []): array
     {
+        $shortenLinks = self::enabled($tracking['shorten_links'] ?? false);
+
         return [
             'title' => self::title((string) ($entity['title'] ?? '')),
             'content' => self::text((string) ($entity['body'] ?? '')),
@@ -16,7 +18,18 @@ final class ContentMapper
             'account_ids' => self::ids($targets['account_ids'] ?? []),
             'group_ids' => self::ids($targets['group_ids'] ?? []),
             'media_ids' => self::ids($targets['media_ids'] ?? []),
+            'options' => [
+                'tracking' => [
+                    'shorten_links' => $shortenLinks,
+                    'add_source' => $shortenLinks && self::enabled($tracking['add_source'] ?? false),
+                ],
+            ],
         ];
+    }
+
+    private static function enabled(mixed $value): bool
+    {
+        return $value === true || $value === 1 || $value === '1';
     }
 
     private static function title(string $value): string

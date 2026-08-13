@@ -69,6 +69,7 @@ $idempotency = 'Drupal\\vedismm\\Service\\Idempotency';
 $settings = 'Drupal\\vedismm\\Form\\SettingsForm';
 $gateway = 'Drupal\\vedismm\\Service\\VediSMMGateway';
 $serviceClass = 'Drupal\\vedismm\\Service\\SubmissionService';
+$submissionForm = 'Drupal\\vedismm\\Form\\SubmissionForm';
 
 $mapped = $mapper::fromEntity([
     'id' => 42,
@@ -83,6 +84,45 @@ drupal_check('content entity mapper normalizes DraftInput',
     && $mapped['link'] === 'https://example.test/node/42'
     && $mapped['account_ids'] === [101]
     && $mapped['group_ids'] === [201]);
+drupal_check('legacy Drupal mapping defaults tracking off',
+    ($mapped['options']['tracking'] ?? null) === [
+        'shorten_links' => false,
+        'add_source' => false,
+    ],
+    $mapped);
+
+$tracked = $mapper::fromEntity([], [], [
+    'shorten_links' => '1',
+    'add_source' => 1,
+]);
+drupal_check('Drupal mapping emits explicit booleans only under options.tracking',
+    ($tracked['options'] ?? null) === [
+        'tracking' => [
+            'shorten_links' => true,
+            'add_source' => true,
+        ],
+    ]
+    && !array_key_exists('shorten_links', $tracked)
+    && !array_key_exists('add_source', $tracked),
+    $tracked);
+
+$truthy = $mapper::fromEntity([], [], [
+    'shorten_links' => 'true',
+    'add_source' => 'on',
+]);
+drupal_check('Drupal mapping rejects truthy strings',
+    ($truthy['options']['tracking'] ?? null) === [
+        'shorten_links' => false,
+        'add_source' => false,
+    ],
+    $truthy);
+
+$dependent = $mapper::fromEntity([], [], [
+    'shorten_links' => false,
+    'add_source' => true,
+]);
+drupal_check('Drupal mapping forces source off without shortening',
+    ($dependent['options']['tracking']['add_source'] ?? null) === false);
 drupal_check('idempotency key uses content entity format',
     $idempotency::forAction('install-abc', 'node', 42, 7, 'draft') === 'cms:install-abc:node:42:7:draft');
 drupal_check('token stays in State API and is absent from config export',
@@ -102,13 +142,43 @@ $transport = static function (array $request) use (&$calls): array {
     throw new RuntimeException('unexpected path');
 };
 $service = new $serviceClass(new $gateway('secret-token', $transport), 'install-abc');
-$result = $service->submit(['id' => 42, 'type' => 'node', 'revision' => 7, 'title' => 'Title', 'body' => '<p>Body</p>', 'url' => 'https://example.test/node/42'], ['account_ids' => ['101'], 'group_ids' => [], 'media_ids' => []], ['has_permission' => true, 'csrf_valid' => true, 'action' => 'publish']);
+$result = $service->submit(['id' => 42, 'type' => 'node', 'revision' => 7, 'title' => 'Title', 'body' => '<p>Body</p>', 'url' => 'https://example.test/node/42'], ['account_ids' => ['101'], 'group_ids' => [], 'media_ids' => []], [
+    'has_permission' => true,
+    'csrf_valid' => true,
+    'action' => 'publish',
+    'tracking' => ['shorten_links' => '1', 'add_source' => '1'],
+]);
 drupal_check('submission checks permission, CSRF, versioned publish and audit',
     $result['job_id'] === 401
     && $calls[0]['headers']['Idempotency-Key'] === 'cms:install-abc:node:42:7:draft'
     && $calls[1]['headers']['Idempotency-Key'] === 'cms:install-abc:node:42:7:publish'
     && $calls[1]['body'] === ['version' => 1]
     && $result['audit']['request_id'] === 'fixture-publish');
+drupal_check('Drupal gateway body contains only nested tracking and unchanged URLs',
+    ($calls[0]['body']['options']['tracking'] ?? null) === [
+        'shorten_links' => true,
+        'add_source' => true,
+    ]
+    && !array_key_exists('shorten_links', $calls[0]['body'])
+    && !array_key_exists('add_source', $calls[0]['body'])
+    && $calls[0]['body']['link'] === 'https://example.test/node/42'
+    && $calls[0]['body']['content'] === 'Body',
+    $calls[0]['body'] ?? null);
+
+$trackingElements = method_exists($submissionForm, 'trackingElements')
+    ? $submissionForm::trackingElements()
+    : [];
+drupal_check('Drupal Form API exposes accessible dependent tracking checkboxes',
+    ($trackingElements['#type'] ?? null) === 'fieldset'
+    && ($trackingElements['#tree'] ?? null) === true
+    && ($trackingElements['shorten_links']['#type'] ?? null) === 'checkbox'
+    && ($trackingElements['shorten_links']['#default_value'] ?? null) === false
+    && ($trackingElements['add_source']['#type'] ?? null) === 'checkbox'
+    && ($trackingElements['add_source']['#default_value'] ?? null) === false
+    && ($trackingElements['add_source']['#states']['disabled'][':input[name="tracking[shorten_links]"]']['checked'] ?? null) === false
+    && str_contains((string) ($trackingElements['add_source']['#description'] ?? ''), 'utm_source')
+    && str_contains((string) ($trackingElements['add_source']['#description'] ?? ''), 'utm_term'),
+    $trackingElements);
 
 foreach ([['has_permission' => false, 'csrf_valid' => true, 'code' => 'vedismm_permission_denied'], ['has_permission' => true, 'csrf_valid' => false, 'code' => 'vedismm_invalid_csrf']] as $case) {
     try {

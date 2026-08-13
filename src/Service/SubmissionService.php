@@ -26,8 +26,9 @@ final class SubmissionService
         $entityId = (int) ($entity['id'] ?? 0);
         $revision = (int) ($entity['revision'] ?? 1);
         $action = (string) ($context['action'] ?? 'draft');
+        $tracking = is_array($context['tracking'] ?? null) ? $context['tracking'] : [];
         $draftKey = Idempotency::forAction($this->installationId, $entityType, $entityId, $revision, 'draft');
-        $draft = $this->gateway->post('/posts', ['Idempotency-Key' => $draftKey], ContentMapper::fromEntity($entity, $targets));
+        $draft = $this->gateway->post('/posts', ['Idempotency-Key' => $draftKey], ContentMapper::fromEntity($entity, $targets, $tracking));
         $draftData = is_array($draft['body']['data'] ?? null) ? $draft['body']['data'] : [];
         $postId = (int) ($draftData['id'] ?? 0);
         $version = (int) ($draftData['version'] ?? 1);

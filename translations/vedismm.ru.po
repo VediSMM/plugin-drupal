@@ -9,3 +9,18 @@ msgstr "Отправлять контент в VediSMM"
 
 msgid "VediSMM API token"
 msgstr "API-токен VediSMM"
+
+msgid "Tracking links"
+msgstr "Трекинговые ссылки"
+
+msgid "Shorten links"
+msgstr "Сокращать ссылки"
+
+msgid "Create a separate short link automatically for each target network."
+msgstr "Автоматически создавать отдельную короткую ссылку для каждой целевой площадки."
+
+msgid "Add network source"
+msgstr "Добавлять источник площадки"
+
+msgid "Available only with shortening. If utm_source is absent, add utm_source=<network> and preserve existing utm_term. If utm_source exists, preserve it and replace or add one utm_term=<network>."
+msgstr "Доступно только вместе с сокращением. Если utm_source отсутствует, добавить utm_source=<network> и сохранить существующий utm_term. Если utm_source уже есть, сохранить его и заменить либо добавить один utm_term=<network>."
