@@ -1,11 +1,8 @@
 services:
-  vedismm.transport:
-    class: Drupal\vedismm\Service\DrupalTransport
-    arguments: ['@http_client']
   vedismm.gateway:
     class: Drupal\vedismm\Service\VediSMMGateway
     factory: ['Drupal\vedismm\Service\VediSMMGatewayFactory', 'create']
-    arguments: ['@state', '@vedismm.transport']
+    arguments: ['@state', '@config.factory', '@http_client']
   vedismm.submission:
     class: Drupal\vedismm\Service\SubmissionService
     arguments: ['@vedismm.gateway']

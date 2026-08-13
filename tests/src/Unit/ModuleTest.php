@@ -61,6 +61,29 @@ interface EntityTypeManagerInterface
 PHP);
 }
 
+if (!interface_exists('Drupal\\Core\\State\\StateInterface')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\State;
+interface StateInterface
+{
+    public function get(string $key, mixed $default = null): mixed;
+    public function set(string $key, mixed $value): void;
+    public function delete(string $key): void;
+}
+PHP);
+}
+
+if (!interface_exists('Drupal\\Core\\Config\\ConfigFactoryInterface')) {
+    eval(<<<'PHP'
+namespace Drupal\Core\Config;
+interface ConfigFactoryInterface
+{
+    public function get(string $name): object;
+    public function getEditable(string $name): object;
+}
+PHP);
+}
+
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Drupal\\vedismm\\';
     if (!str_starts_with($class, $prefix)) {
@@ -100,7 +123,7 @@ function drupal_finish(): never
 }
 
 $root = dirname(__DIR__, 3);
-foreach (['vedismm.info.yml', 'vedismm.permissions.yml', 'vedismm.routing.yml', 'vedismm.services.yml', 'config/schema/vedismm.schema.yml'] as $file) {
+foreach (['vedismm.info.yml', 'vedismm.permissions.yml', 'vedismm.routing.yml', 'vedismm.services.yml', 'config/schema/vedismm.schema.yml', 'config/install/vedismm.settings.yml'] as $file) {
     drupal_check("{$file} exists", is_file($root . '/' . $file));
 }
 
@@ -190,6 +213,10 @@ drupal_check('token stays in State API and is absent from config export',
     $settings::saveToken('', 'saved-token') === 'saved-token'
     && $settings::saveToken('', 'saved-token', true) === null
     && !str_contains(json_encode($settings::exportConfig(['token' => 'secret-token']), JSON_THROW_ON_ERROR), 'secret-token'));
+
+drupal_check('settings route class is a native Form API form',
+    is_subclass_of($settings, \Drupal\Core\Form\FormBase::class)
+    && is_subclass_of($settings, \Drupal\Core\Form\FormInterface::class));
 
 $calls = [];
 $transport = static function (array $request) use (&$calls): array {
@@ -316,6 +343,111 @@ $GLOBALS['drupal_test_messenger'] = new class {
     public function addError(mixed $message): void { $this->errors[] = (string) $message; }
 };
 
+$settingsState = new class implements \Drupal\Core\State\StateInterface {
+    /** @var array<string,mixed> */
+    public array $values = ['vedismm.api_token' => 'saved-token'];
+    public function get(string $key, mixed $default = null): mixed { return $this->values[$key] ?? $default; }
+    public function set(string $key, mixed $value): void { $this->values[$key] = $value; }
+    public function delete(string $key): void { unset($this->values[$key]); }
+};
+$settingsConfig = new class {
+    /** @var array<string,mixed> */
+    public array $values = ['api_base_url' => 'https://old-api.example.test/v1/'];
+    public bool $saved = false;
+    public function get(string $key): mixed { return $this->values[$key] ?? null; }
+    public function set(string $key, mixed $value): static { $this->values[$key] = $value; return $this; }
+    public function save(): void { $this->saved = true; }
+};
+$settingsConfigFactory = new class($settingsConfig) implements \Drupal\Core\Config\ConfigFactoryInterface {
+    public function __construct(private readonly object $config) {}
+    public function get(string $name): object { return $this->config; }
+    public function getEditable(string $name): object { return $this->config; }
+};
+$settingsContainer = new class($settingsState, $settingsConfigFactory) implements \Symfony\Component\DependencyInjection\ContainerInterface {
+    public function __construct(private readonly object $state, private readonly object $configFactory) {}
+    public function get(string $id): mixed
+    {
+        return match ($id) {
+            'state' => $this->state,
+            'config.factory' => $this->configFactory,
+            default => throw new RuntimeException("Unknown test service: {$id}"),
+        };
+    }
+};
+$settingsFormState = new class implements \Drupal\Core\Form\FormStateInterface {
+    /** @var array<string,mixed> */
+    public array $values = [];
+    /** @var array<string,mixed> */
+    public array $storage = [];
+    /** @var array<string,string> */
+    public array $errors = [];
+    public function getValue(string $key, mixed $default = null): mixed { return $this->values[$key] ?? $default; }
+    public function set(string $key, mixed $value): static { $this->storage[$key] = $value; return $this; }
+    public function get(string $key): mixed { return $this->storage[$key] ?? null; }
+    public function setErrorByName(string $name, mixed $message = ''): static { $this->errors[$name] = (string) $message; return $this; }
+};
+$routedSettingsForm = method_exists($settings, 'create') ? $settings::create($settingsContainer) : null;
+$builtSettingsForm = $routedSettingsForm instanceof \Drupal\Core\Form\FormInterface
+    ? $routedSettingsForm->buildForm([], $settingsFormState)
+    : [];
+drupal_check('native settings form keeps the saved token secret and exposes explicit clear',
+    ($builtSettingsForm['api_token']['#type'] ?? null) === 'password'
+    && !array_key_exists('#default_value', $builtSettingsForm['api_token'] ?? [])
+    && ($builtSettingsForm['clear_api_token']['#type'] ?? null) === 'checkbox'
+    && ($builtSettingsForm['clear_api_token']['#return_value'] ?? null) === '1'
+    && ($builtSettingsForm['api_base_url']['#type'] ?? null) === 'url'
+    && ($builtSettingsForm['api_base_url']['#default_value'] ?? null) === 'https://old-api.example.test/v1/'
+    && ($builtSettingsForm['actions']['submit']['#type'] ?? null) === 'submit'
+    && !array_key_exists('token', $builtSettingsForm)
+    && !array_key_exists('csrf_token', $builtSettingsForm),
+    $builtSettingsForm);
+
+if ($routedSettingsForm instanceof \Drupal\Core\Form\FormInterface) {
+    $settingsFormState->values = [
+        'api_token' => '   ',
+        'clear_api_token' => 'on',
+        'api_base_url' => 'https://api.example.test/v1/',
+    ];
+    $settingsSubmission = [];
+    $routedSettingsForm->submitForm($settingsSubmission, $settingsFormState);
+}
+drupal_check('blank token preserves State API secret and truthy clear strings are rejected',
+    $settingsState->get('vedismm.api_token') === 'saved-token'
+    && $settingsConfig->get('api_base_url') === 'https://api.example.test/v1'
+    && $settingsConfig->saved);
+
+if ($routedSettingsForm instanceof \Drupal\Core\Form\FormInterface) {
+    $settingsFormState->values = [
+        'api_token' => '',
+        'clear_api_token' => '1',
+        'api_base_url' => 'https://api.example.test/v1',
+    ];
+    $settingsSubmission = [];
+    $routedSettingsForm->submitForm($settingsSubmission, $settingsFormState);
+}
+drupal_check('explicit native checkbox value clears the State API secret',
+    $settingsState->get('vedismm.api_token') === null);
+
+if ($routedSettingsForm instanceof \Drupal\Core\Form\FormInterface) {
+    $settingsFormState->values = [
+        'api_token' => ' state-token ',
+        'clear_api_token' => false,
+        'api_base_url' => 'https://api.example.test/v1/',
+    ];
+    $settingsSubmission = [];
+    $routedSettingsForm->submitForm($settingsSubmission, $settingsFormState);
+    $settingsFormState->values['api_base_url'] = 'javascript:alert(1)';
+    $settingsValidation = [];
+    $routedSettingsForm->validateForm($settingsValidation, $settingsFormState);
+}
+drupal_check('settings save a replacement token and normalized HTTPS API base URL',
+    $settingsState->get('vedismm.api_token') === 'state-token'
+    && $settingsConfig->get('api_base_url') === 'https://api.example.test/v1');
+drupal_check('settings reject a non-HTTP API base URL',
+    array_key_exists('api_base_url', $settingsFormState->errors));
+$GLOBALS['drupal_test_messenger']->statuses = [];
+$GLOBALS['drupal_test_messenger']->errors = [];
+
 drupal_check('submission route class is a native Form API form',
     is_subclass_of($submissionForm, \Drupal\Core\Form\FormBase::class)
     && is_subclass_of($submissionForm, \Drupal\Core\Form\FormInterface::class));
@@ -398,18 +530,13 @@ $httpClient = new class($httpRequests) {
         };
     }
 };
-$state = new class {
-    public function get(string $key, mixed $default = null): mixed
-    {
-        return $key === 'vedismm.api_token' ? 'state-token' : $default;
-    }
-};
 $transportClass = 'Drupal\\vedismm\\Service\\DrupalTransport';
 $gatewayFactoryClass = 'Drupal\\vedismm\\Service\\VediSMMGatewayFactory';
 if (class_exists($transportClass) && class_exists($gatewayFactoryClass)) {
     $realGateway = $gatewayFactoryClass::create(
-        $state,
-        new $transportClass($httpClient, 'https://api.example.test/v1'),
+        $settingsState,
+        $settingsConfigFactory,
+        $httpClient,
     );
     (new $serviceClass($realGateway, 'install-real'))->submit(
         ['id' => 43, 'type' => 'node', 'revision' => 9, 'title' => 'Real transport'],
@@ -424,11 +551,30 @@ drupal_check('production gateway factory uses State API token and Drupal HTTP cl
     && ($httpRequests[0]['options']['json']['options']['tracking'] ?? null) === ['shorten_links' => false, 'add_source' => false],
     $httpRequests[0] ?? null);
 
+$missingTokenRequests = count($httpRequests);
+try {
+    $gatewayFactoryClass::create(
+        new class implements \Drupal\Core\State\StateInterface {
+            public function get(string $key, mixed $default = null): mixed { return $default; }
+            public function set(string $key, mixed $value): void {}
+            public function delete(string $key): void {}
+        },
+        $settingsConfigFactory,
+        $httpClient,
+    );
+    drupal_check('production gateway fails closed when token is absent', false);
+} catch (RuntimeException $exception) {
+    drupal_check('production gateway fails closed when token is absent',
+        $exception->getMessage() === 'vedismm_token_not_configured'
+        && count($httpRequests) === $missingTokenRequests);
+}
+
 $servicesYaml = (string) file_get_contents($root . '/vedismm.services.yml');
 $routingYaml = (string) file_get_contents($root . '/vedismm.routing.yml');
 drupal_check('Drupal service container binds state and http_client into production gateway',
     str_contains($servicesYaml, 'VediSMMGatewayFactory')
     && str_contains($servicesYaml, "'@state'")
+    && str_contains($servicesYaml, "'@config.factory'")
     && str_contains($servicesYaml, "'@http_client'")
     && str_contains($routingYaml, "entity_type: 'node'")
     && str_contains($routingYaml, "entity_id: '\\d+'"));

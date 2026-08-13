@@ -47,9 +47,12 @@ cp -R "$ROOT/translations" "$BUILD_DIR/vedismm/translations"
   tar -czf "$TARBALL" vedismm
 )
 
-entries="$(tar -tzf "$TARBALL")"
-printf '%s\n' "$entries" | grep -q '^vedismm/vedismm.info.yml$' || fail "archive misses info.yml"
-printf '%s\n' "$entries" | grep -q '^vedismm/translations/vedismm.ru.po$' || fail "archive misses Russian translation"
-printf '%s\n' "$entries" | grep -q '^vedismm/tests/' && fail "archive contains tests"
+entries_file="$BUILD_DIR/archive-entries.txt"
+tar -tzf "$TARBALL" > "$entries_file"
+grep -q '^vedismm/vedismm.info.yml$' "$entries_file" || fail "archive misses info.yml"
+grep -q '^vedismm/translations/vedismm.ru.po$' "$entries_file" || fail "archive misses Russian translation"
+if grep -q '^vedismm/tests/' "$entries_file"; then
+  fail "archive contains tests"
+fi
 
 printf 'Built %s\n' "$TARBALL"

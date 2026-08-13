@@ -4,6 +4,11 @@ VediSMM for Drupal adds a permission-protected content submission workflow for D
 
 The module stores the VediSMM token in State API, not exported configuration. The default action creates a VediSMM draft; publish is an explicit action protected by Drupal permission and CSRF checks.
 
+Administrators configure the API URL and token at **Configuration → Web services
+→ VediSMM**. The saved token is never rendered back into the form: leave the
+password field blank to preserve it, or use the separate removal checkbox to
+clear it explicitly. Requests fail closed while no token is saved.
+
 ## Tracking Links
 
 The submission form uses native Drupal Form API checkboxes for **Shorten

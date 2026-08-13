@@ -25,6 +25,33 @@ msgstr "У вас нет права отправлять выбранный ма
 msgid "VediSMM API token"
 msgstr "API-токен VediSMM"
 
+msgid "VediSMM API base URL"
+msgstr "Базовый URL API VediSMM"
+
+msgid "Use an absolute HTTP or HTTPS URL. The default is the public VediSMM API."
+msgstr "Укажите абсолютный HTTP- или HTTPS-URL. По умолчанию используется публичный API VediSMM."
+
+msgid "A token is saved. Leave this field blank to keep it unchanged."
+msgstr "Токен сохранён. Оставьте поле пустым, чтобы не изменять его."
+
+msgid "Enter the server-side token used to authenticate VediSMM API requests."
+msgstr "Введите серверный токен для аутентификации запросов к API VediSMM."
+
+msgid "Remove the saved API token"
+msgstr "Удалить сохранённый API-токен"
+
+msgid "Requests fail closed until a new token is saved."
+msgstr "До сохранения нового токена запросы безопасно отклоняются."
+
+msgid "Save configuration"
+msgstr "Сохранить конфигурацию"
+
+msgid "Enter an absolute HTTP or HTTPS API base URL."
+msgstr "Введите абсолютный HTTP- или HTTPS-URL API."
+
+msgid "The VediSMM configuration has been saved."
+msgstr "Конфигурация VediSMM сохранена."
+
 msgid "Tracking links"
 msgstr "Трекинговые ссылки"
 

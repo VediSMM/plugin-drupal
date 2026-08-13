@@ -26,6 +26,7 @@ foreach ($files as $file) {
 }
 
 $form = (string) file_get_contents($root . '/src/Form/SubmissionForm.php');
+$settingsForm = (string) file_get_contents($root . '/src/Form/SettingsForm.php');
 $mapper = (string) file_get_contents($root . '/src/Service/ContentMapper.php');
 $services = (string) file_get_contents($root . '/vedismm.services.yml');
 $routing = (string) file_get_contents($root . '/vedismm.routing.yml');
@@ -37,13 +38,16 @@ $russianGuide = (string) file_get_contents($root . '/docs/ru/guide.md');
 
 $contractChecks = [
     'routed class extends Drupal FormBase' => str_contains($form, 'extends FormBase'),
+    'settings route extends Drupal FormBase' => str_contains($settingsForm, 'extends FormBase') && str_contains($settingsForm, 'function buildForm(') && str_contains($settingsForm, 'function submitForm('),
+    'settings keep token in State API behind a password field' => str_contains($settingsForm, "'#type' => 'password'") && str_contains($settingsForm, "set('vedismm.api_token'") && !str_contains($settingsForm, "->set('api_token'"),
+    'settings expose explicit token removal and validate API URL' => str_contains($settingsForm, "'#return_value' => '1'") && str_contains($settingsForm, 'FILTER_VALIDATE_URL'),
     'routed form has container factory' => str_contains($form, 'static function create(') && str_contains($form, "get('vedismm.submission')"),
     'routed form builds and submits through Form API' => str_contains($form, 'function buildForm(') && str_contains($form, 'function submitForm('),
     'routed form restricts entity type and enforces entity access' => str_contains($routing, "entity_type: 'node'") && str_contains($routing, "entity_id: '\\d+'") && str_contains($form, "->access('update')"),
-    'production gateway uses Drupal state and HTTP services' => str_contains($services, 'VediSMMGatewayFactory') && str_contains($services, "'@state'") && str_contains($services, "'@http_client'") && str_contains($transport, '->request(') && str_contains($gatewayFactory, "get('vedismm.api_token'"),
+    'production gateway uses Drupal state, config, and HTTP services' => str_contains($services, 'VediSMMGatewayFactory') && str_contains($services, "'@state'") && str_contains($services, "'@config.factory'") && str_contains($services, "'@http_client'") && str_contains($transport, '->request(') && str_contains($gatewayFactory, "get('vedismm.api_token'"),
     'native Drupal checkbox controls' => substr_count($form, "'#type' => 'checkbox'") >= 2,
     'native Drupal dependency states' => str_contains($form, "'#states'") && str_contains($form, "tracking[shorten_links]"),
-    'native Form API CSRF convention' => !str_contains($form, "'#token'") && !str_contains($form, 'csrf_token'),
+    'native Form API CSRF convention' => !str_contains($form . $settingsForm, "'#token'") && !str_contains($form . $settingsForm, 'csrf_token'),
     'nested tracking request shape' => str_contains($mapper, "'tracking'"),
     'strict Drupal checkbox normalization' => str_contains($mapper, "=== '1'"),
     'Russian tracking translation' => str_contains($translation, 'Сокращать ссылки') && str_contains($translation, 'Добавлять источник площадки'),

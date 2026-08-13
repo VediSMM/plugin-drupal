@@ -12,5 +12,8 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 test -f dist/vedismm-1.0.0.tar.gz
-tar -tzf dist/vedismm-1.0.0.tar.gz | grep -q '^vedismm/vedismm.info.yml$'
+archive_entries="$(mktemp "${TMPDIR:-/tmp}/vedismm-drupal-archive.XXXXXX")"
+trap 'rm -f "$archive_entries"' EXIT
+tar -tzf dist/vedismm-1.0.0.tar.gz > "$archive_entries"
+grep -q '^vedismm/vedismm.info.yml$' "$archive_entries"
 printf 'Drupal smoke checks passed.\n'
