@@ -12,3 +12,5 @@ vedismm.submit:
     _title: 'Send to VediSMM'
   requirements:
     _permission: 'send content to vedismm'
+    entity_type: 'node'
+    entity_id: '\d+'

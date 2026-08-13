@@ -108,6 +108,8 @@ $classes = [
     'Drupal\\vedismm\\Service\\ContentMapper',
     'Drupal\\vedismm\\Service\\VediSMMGateway',
     'Drupal\\vedismm\\Service\\SubmissionService',
+    'Drupal\\vedismm\\Service\\DrupalTransport',
+    'Drupal\\vedismm\\Service\\VediSMMGatewayFactory',
     'Drupal\\vedismm\\Service\\Idempotency',
     'Drupal\\vedismm\\Form\\SettingsForm',
     'Drupal\\vedismm\\Form\\SubmissionForm',
@@ -262,6 +264,7 @@ $formState = new class implements \Drupal\Core\Form\FormStateInterface {
     }
 };
 $entity = new class {
+    public bool $allowed = true;
     public function id(): int { return 42; }
     public function getRevisionId(): int { return 7; }
     public function bundle(): string { return 'article'; }
@@ -280,6 +283,7 @@ $entity = new class {
             public function toString(): string { return 'https://example.test/node/42'; }
         };
     }
+    public function access(string $operation): bool { return $operation === 'update' && $this->allowed; }
 };
 $entityTypeManager = new class($entity) implements \Drupal\Core\Entity\EntityTypeManagerInterface {
     public function __construct(private readonly object $entity) {}
@@ -306,7 +310,10 @@ $container = new class($service, $entityTypeManager) implements \Symfony\Compone
 $GLOBALS['drupal_test_messenger'] = new class {
     /** @var array<int,string> */
     public array $statuses = [];
+    /** @var array<int,string> */
+    public array $errors = [];
     public function addStatus(mixed $message): void { $this->statuses[] = (string) $message; }
+    public function addError(mixed $message): void { $this->errors[] = (string) $message; }
 };
 
 drupal_check('submission route class is a native Form API form',
@@ -348,6 +355,83 @@ drupal_check('native Form API submission reports success without a custom CSRF f
     && $GLOBALS['drupal_test_messenger']->statuses === ['Content sent to VediSMM.']
     && !array_key_exists('token', $builtForm)
     && !array_key_exists('csrf_token', $builtForm));
+
+$callsBeforeDenied = count($calls);
+$deniedState = clone $formState;
+$deniedState->storage = ['vedismm_entity_type' => 'node', 'vedismm_entity_id' => '42'];
+$deniedState->values = ['tracking' => ['shorten_links' => '1', 'add_source' => '1']];
+$entity->allowed = false;
+$deniedForm = [];
+$routedForm?->submitForm($deniedForm, $deniedState);
+drupal_check('native submission enforces entity update access before external send',
+    count($calls) === $callsBeforeDenied
+    && in_array('You are not allowed to send the selected content.', $GLOBALS['drupal_test_messenger']->errors, true));
+$entity->allowed = true;
+
+$unsupportedState = clone $formState;
+$unsupportedState->storage = ['vedismm_entity_type' => 'user', 'vedismm_entity_id' => '42'];
+$unsupportedForm = [];
+$routedForm?->submitForm($unsupportedForm, $unsupportedState);
+drupal_check('native submission rejects unsupported routed entity types before loading or sending',
+    count($calls) === $callsBeforeDenied
+    && in_array('The selected content type is not supported.', $GLOBALS['drupal_test_messenger']->errors, true));
+
+$httpRequests = [];
+$httpClient = new class($httpRequests) {
+    /** @var array<int,array<string,mixed>> */
+    public array $requests = [];
+    public function __construct(array &$requests) { $this->requests =& $requests; }
+    /** @param array<string,mixed> $options */
+    public function request(string $method, string $url, array $options): object
+    {
+        $this->requests[] = compact('method', 'url', 'options');
+        return new class {
+            public function getStatusCode(): int { return 201; }
+            /** @return array<string,array<int,string>> */
+            public function getHeaders(): array { return ['Request-Id' => ['real-transport'], 'ETag' => ['"v1"']]; }
+            public function getBody(): object
+            {
+                return new class {
+                    public function __toString(): string { return '{"data":{"id":808,"status":"draft","version":1}}'; }
+                };
+            }
+        };
+    }
+};
+$state = new class {
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $key === 'vedismm.api_token' ? 'state-token' : $default;
+    }
+};
+$transportClass = 'Drupal\\vedismm\\Service\\DrupalTransport';
+$gatewayFactoryClass = 'Drupal\\vedismm\\Service\\VediSMMGatewayFactory';
+if (class_exists($transportClass) && class_exists($gatewayFactoryClass)) {
+    $realGateway = $gatewayFactoryClass::create(
+        $state,
+        new $transportClass($httpClient, 'https://api.example.test/v1'),
+    );
+    (new $serviceClass($realGateway, 'install-real'))->submit(
+        ['id' => 43, 'type' => 'node', 'revision' => 9, 'title' => 'Real transport'],
+        [],
+        ['has_permission' => true, 'csrf_valid' => true, 'action' => 'draft'],
+    );
+}
+drupal_check('production gateway factory uses State API token and Drupal HTTP client',
+    ($httpRequests[0]['method'] ?? null) === 'POST'
+    && ($httpRequests[0]['url'] ?? null) === 'https://api.example.test/v1/posts'
+    && ($httpRequests[0]['options']['headers']['Authorization'] ?? null) === 'Bearer state-token'
+    && ($httpRequests[0]['options']['json']['options']['tracking'] ?? null) === ['shorten_links' => false, 'add_source' => false],
+    $httpRequests[0] ?? null);
+
+$servicesYaml = (string) file_get_contents($root . '/vedismm.services.yml');
+$routingYaml = (string) file_get_contents($root . '/vedismm.routing.yml');
+drupal_check('Drupal service container binds state and http_client into production gateway',
+    str_contains($servicesYaml, 'VediSMMGatewayFactory')
+    && str_contains($servicesYaml, "'@state'")
+    && str_contains($servicesYaml, "'@http_client'")
+    && str_contains($routingYaml, "entity_type: 'node'")
+    && str_contains($routingYaml, "entity_id: '\\d+'"));
 
 foreach ([['has_permission' => false, 'csrf_valid' => true, 'code' => 'vedismm_permission_denied'], ['has_permission' => true, 'csrf_valid' => false, 'code' => 'vedismm_invalid_csrf']] as $case) {
     try {

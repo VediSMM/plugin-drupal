@@ -12,6 +12,9 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 
 final class SubmissionForm extends FormBase
 {
+    /** @var array<int,string> */
+    private const SUPPORTED_ENTITY_TYPES = ['node'];
+
     public function __construct(
         private readonly SubmissionService $submissionService,
         private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -52,9 +55,17 @@ final class SubmissionForm extends FormBase
     {
         $entityType = (string) ($form_state->get('vedismm_entity_type') ?? 'node');
         $entityId = (string) ($form_state->get('vedismm_entity_id') ?? '');
+        if (!in_array($entityType, self::SUPPORTED_ENTITY_TYPES, true)) {
+            $this->messenger()->addError($this->t('The selected content type is not supported.'));
+            return;
+        }
         $entity = $this->entityTypeManager->getStorage($entityType)->load($entityId);
         if (!is_object($entity)) {
             $this->messenger()->addError($this->t('The selected content could not be loaded.'));
+            return;
+        }
+        if (!method_exists($entity, 'access') || $entity->access('update') !== true) {
+            $this->messenger()->addError($this->t('You are not allowed to send the selected content.'));
             return;
         }
 

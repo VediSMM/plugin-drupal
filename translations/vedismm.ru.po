@@ -16,6 +16,12 @@ msgstr "Материал отправлен в VediSMM."
 msgid "The selected content could not be loaded."
 msgstr "Не удалось загрузить выбранный материал."
 
+msgid "The selected content type is not supported."
+msgstr "Выбранный тип материала не поддерживается."
+
+msgid "You are not allowed to send the selected content."
+msgstr "У вас нет права отправлять выбранный материал."
+
 msgid "VediSMM API token"
 msgstr "API-токен VediSMM"
 

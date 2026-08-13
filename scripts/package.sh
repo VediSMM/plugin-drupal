@@ -10,6 +10,8 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 required_files=(
   "vedismm.info.yml"
   "translations/vedismm.ru.po"
+  "src/Service/DrupalTransport.php"
+  "src/Service/VediSMMGatewayFactory.php"
   "docs/en/guide.md"
   "docs/ru/guide.md"
   "marketplace/en/listing.md"
