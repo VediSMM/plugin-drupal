@@ -3,7 +3,7 @@
 VediSMM for Drupal connects Drupal editorial content to the VediSMM API at `https://vedismm.ru/api/v1`.
 The plugin will normalize CMS content into the shared `DraftInput` contract, create VediSMM drafts, and let an editor explicitly schedule or publish them.
 
-Status: `0.1.0-dev`.
+Status: `1.1.0`.
 
 ## Planned Scope
 

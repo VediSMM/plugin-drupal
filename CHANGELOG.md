@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-dev
+## 1.1.0 - 2026-08-15
 
 - Add native dependent Drupal Form API tracking controls and nested
   `options.tracking` request mapping with strict value normalization.

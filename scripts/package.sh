@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vedismm-drupal-package.XXXXXX")"
 DIST_DIR="$ROOT/dist"
-TARBALL="$DIST_DIR/vedismm-1.0.0.tar.gz"
+TARBALL="$DIST_DIR/vedismm-1.1.0.tar.gz"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 required_files=(
